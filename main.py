@@ -264,7 +264,7 @@ class FaceMotionDetector:
             
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
                 # Compare with known faces
-                matches = face_recognition.compare_faces(self.known_encodings, face_encoding)
+                matches = face_recognition.compare_faces(self.known_encodings, face_encoding, tolerance=4)
                 name = "Unknown"
                 confidence = 0.0
                 
