@@ -2,9 +2,12 @@ import cv2
 import numpy as np
 import threading
 import time
-from flask import Flask, Response, render_template_string
-from picamera2 import Picamera2
+import base64
 import os
+from datetime import datetime
+from flask import Flask, Response, render_template_string, jsonify, request
+from picamera2 import Picamera2
+from database import save_motion_detection
 
 class FaceMotionDetector:
     def __init__(self):
@@ -39,6 +42,13 @@ class FaceMotionDetector:
         # Frame for streaming
         self.current_frame = None
         self.frame_lock = threading.Lock()
+        
+        # Motion detection storage
+        self.last_motion_time = 0
+        self.motion_cooldown = 10  # seconds between motion detections
+        self.captures_dir = "captures"
+        if not os.path.exists(self.captures_dir):
+            os.makedirs(self.captures_dir)
         
         # Start processing thread
         self.processing_thread = threading.Thread(target=self.process_frames)
@@ -128,11 +138,17 @@ class FaceMotionDetector:
         if total_motion_area > 1000:  # Total area threshold for large movements
             motion_detected = True
         
-        # Update motion status
+        # Update motion status and capture photo if motion detected
+        current_time = time.time()
         if motion_detected:
             self.motion_detected = True
-            self.motion_timer = time.time()
-        elif time.time() - self.motion_timer > self.motion_display_duration:
+            self.motion_timer = current_time
+            
+            # Capture photo and save to database if enough time has passed
+            if current_time - self.last_motion_time > self.motion_cooldown:
+                self.capture_motion_photo(frame, total_motion_area)
+                self.last_motion_time = current_time
+        elif current_time - self.motion_timer > self.motion_display_duration:
             self.motion_detected = False
         
         # Display motion text in upper right corner
@@ -161,6 +177,45 @@ class FaceMotionDetector:
             self.min_motion_area = 100
         else:
             print(f"Invalid sensitivity level: {sensitivity_level}")
+    
+    def capture_motion_photo(self, frame, motion_area):
+        """Capture photo when motion is detected and save to database"""
+        try:
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"motion_{timestamp}.jpg"
+            filepath = os.path.join(self.captures_dir, filename)
+            
+            # Save the frame as image
+            cv2.imwrite(filepath, frame)
+            
+            # Calculate confidence based on motion area
+            confidence = min(100, max(0, (motion_area / 1000) * 100))
+            
+            # Prepare motion data
+            motion_data = {
+                "motion_area": str(motion_area),
+                "timestamp": timestamp,
+                "sensitivity": self.motion_sensitivity,
+                "min_area": self.min_motion_area
+            }
+            
+            # Save to database
+            result = save_motion_detection(
+                motion_data=str(motion_data),
+                confidence=str(confidence),
+                captured_photo=filepath,
+                device_serial="SNABC123",
+                device_model="RPI3"
+            )
+            
+            if result:
+                print(f"Motion detected and saved: {filename} (Area: {motion_area}, Confidence: {confidence:.1f}%)")
+            else:
+                print(f"Failed to save motion detection to database: {filename}")
+                
+        except Exception as e:
+            print(f"Error capturing motion photo: {e}")
     
     def get_frame(self):
         """Get current frame for streaming"""
@@ -194,16 +249,88 @@ def video_feed():
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+@app.route('/motion_detection', methods=['POST'])
+def motion_detection_endpoint():
+    """Manual motion detection endpoint"""
+    try:
+        # Get current frame
+        frame = detector.get_frame()
+        if frame is None:
+            return jsonify({"error": "No frame available"}), 400
+        
+        # Decode frame for processing
+        nparr = np.frombuffer(frame, np.uint8)
+        frame_cv = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        # Simulate motion detection (you can modify this logic)
+        motion_area = 1500  # Simulated motion area
+        confidence = 85.5   # Simulated confidence
+        
+        # Capture photo
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"manual_motion_{timestamp}.jpg"
+        filepath = os.path.join(detector.captures_dir, filename)
+        cv2.imwrite(filepath, frame_cv)
+        
+        # Prepare motion data
+        motion_data = {
+            "motion_area": str(motion_area),
+            "timestamp": timestamp,
+            "sensitivity": detector.motion_sensitivity,
+            "min_area": detector.min_motion_area,
+            "manual_trigger": True
+        }
+        
+        # Save to database
+        result = save_motion_detection(
+            motion_data=str(motion_data),
+            confidence=str(confidence),
+            captured_photo=filepath,
+            device_serial="SNABC123",
+            device_model="RPI3"
+        )
+        
+        if result:
+            return jsonify({
+                "success": True,
+                "message": "Motion detection saved successfully",
+                "filename": filename,
+                "motion_area": motion_area,
+                "confidence": confidence,
+                "timestamp": timestamp
+            })
+        else:
+            return jsonify({"error": "Failed to save to database"}), 500
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/motion_status')
+def motion_status():
+    """Get current motion detection status"""
+    return jsonify({
+        "motion_detected": detector.motion_detected,
+        "sensitivity": detector.motion_sensitivity,
+        "min_motion_area": detector.min_motion_area,
+        "last_motion_time": detector.last_motion_time,
+        "motion_cooldown": detector.motion_cooldown
+    })
+
+
 if __name__ == '__main__':
     print("Starting Face Detection & Motion Sensor Application...")
     print("Features:")
     print("- Face detection with green bounding boxes")
     print("- High-sensitivity motion detection with red 'Motion' text in upper right")
+    print("- Automatic photo capture and database storage on motion detection")
     print("- Flask web server for camera streaming")
     print("- Adjustable motion sensitivity levels")
     print("\nAccess URLs:")
     print("- Video stream: http://[PI_IP]:5000/video_feed")
-    print("\nCurrent sensitivity: HIGH (most sensitive)")
+    print("- Motion detection endpoint: POST http://[PI_IP]:5000/motion_detection")
+    print("- Motion status: GET http://[PI_IP]:5000/motion_status")
+    print("- Device Serial: SNABC123, Model: RPI3")
     
     try:
         app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
