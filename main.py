@@ -228,8 +228,8 @@ class FaceMotionDetector:
 
 # Initialize detector
 detector = FaceMotionDetector()
-# Set initial sensitivity to high for maximum motion detection
-detector.adjust_sensitivity('high')
+# Set initial sensitivity to low for less sensitive motion detection
+detector.adjust_sensitivity('low')
 
 # Flask app
 app = Flask(__name__)
