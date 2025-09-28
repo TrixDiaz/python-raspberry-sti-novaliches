@@ -8,7 +8,7 @@ import os
 
 class FaceMotionDetector:
     def __init__(self):
-        # Initialize camera
+        # Initialize PiCamera2
         self.camera = Picamera2()
         self.camera_config = self.camera.create_video_configuration(
             main={"size": (640, 480), "format": "RGB888"},
@@ -50,7 +50,7 @@ class FaceMotionDetector:
         """Main processing loop for face detection and motion detection"""
         while True:
             try:
-                # Capture frame from camera
+                # Capture frame from PiCamera2
                 frame = self.camera.capture_array()
                 
                 # Convert RGB to BGR for OpenCV
