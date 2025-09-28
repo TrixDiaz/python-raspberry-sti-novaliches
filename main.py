@@ -204,7 +204,7 @@ class FaceMotionDetector:
             result = save_motion_detection(
                 motion_data=str(motion_data),
                 confidence=str(confidence),
-                captured_photo=filepath,
+                captured_photo_path=filepath,
                 device_serial="SNABC123",
                 device_model="RPI3"
             )
@@ -285,7 +285,7 @@ def motion_detection_endpoint():
         result = save_motion_detection(
             motion_data=str(motion_data),
             confidence=str(confidence),
-            captured_photo=filepath,
+            captured_photo_path=filepath,
             device_serial="SNABC123",
             device_model="RPI3"
         )
