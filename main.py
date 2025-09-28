@@ -21,11 +21,21 @@ class FaceMotionDetector:
         cascade_path = os.path.join("model", "haarcascade_frontalface_default.xml")
         self.face_cascade = cv2.CascadeClassifier(cascade_path)
         
-        # Motion detection variables
-        self.background_subtractor = cv2.createBackgroundSubtractorMOG2(detectShadows=True)
+        # Motion detection variables - High sensitivity settings
+        self.background_subtractor = cv2.createBackgroundSubtractorMOG2(
+            detectShadows=True,
+            varThreshold=16,  # Lower threshold for more sensitivity
+            history=500,      # Longer history for better background learning
+            nmixtures=5       # More mixture components for better detection
+        )
         self.motion_detected = False
         self.motion_timer = 0
         self.motion_display_duration = 3  # seconds
+        
+        # Additional motion detection variables
+        self.previous_frame = None
+        self.motion_sensitivity = 30  # Lower = more sensitive
+        self.min_motion_area = 200    # Minimum area to trigger motion
         
         # Frame for streaming
         self.current_frame = None
@@ -73,16 +83,51 @@ class FaceMotionDetector:
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             cv2.putText(frame, 'Face', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
-        # Motion detection
+        # Motion detection with high sensitivity
         motion_mask = self.background_subtractor.apply(frame)
+        
+        # Apply morphological operations to reduce noise
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, kernel)
+        motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, kernel)
+        
+        # Additional frame difference method for extra sensitivity
+        motion_detected = False
+        if self.previous_frame is not None:
+            # Convert current frame to grayscale
+            gray_current = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray_previous = cv2.cvtColor(self.previous_frame, cv2.COLOR_BGR2GRAY)
+            
+            # Calculate frame difference
+            frame_diff = cv2.absdiff(gray_current, gray_previous)
+            _, thresh = cv2.threshold(frame_diff, self.motion_sensitivity, 255, cv2.THRESH_BINARY)
+            
+            # Find contours in frame difference
+            diff_contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            # Check frame difference for motion
+            for contour in diff_contours:
+                if cv2.contourArea(contour) > self.min_motion_area:
+                    motion_detected = True
+                    break
+        
+        # Update previous frame
+        self.previous_frame = frame.copy()
+        
+        # Also check background subtractor method
         motion_contours, _ = cv2.findContours(motion_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        # Check for significant motion
-        motion_detected = False
+        # Check for significant motion with lower threshold for higher sensitivity
+        total_motion_area = 0
         for contour in motion_contours:
-            if cv2.contourArea(contour) > 500:  # Threshold for motion detection
+            area = cv2.contourArea(contour)
+            if area > self.min_motion_area:  # Use configurable threshold
+                total_motion_area += area
                 motion_detected = True
-                break
+        
+        # Additional check: if total motion area is significant, trigger
+        if total_motion_area > 1000:  # Total area threshold for large movements
+            motion_detected = True
         
         # Update motion status
         if motion_detected:
@@ -98,6 +143,26 @@ class FaceMotionDetector:
         
         return frame
     
+    def adjust_sensitivity(self, sensitivity_level):
+        """Adjust motion detection sensitivity
+        Args:
+            sensitivity_level: 'low', 'medium', 'high', 'ultra'
+        """
+        if sensitivity_level == 'low':
+            self.motion_sensitivity = 50
+            self.min_motion_area = 500
+        elif sensitivity_level == 'medium':
+            self.motion_sensitivity = 30
+            self.min_motion_area = 300
+        elif sensitivity_level == 'high':
+            self.motion_sensitivity = 20
+            self.min_motion_area = 200
+        elif sensitivity_level == 'ultra':
+            self.motion_sensitivity = 10
+            self.min_motion_area = 100
+        else:
+            print(f"Invalid sensitivity level: {sensitivity_level}")
+    
     def get_frame(self):
         """Get current frame for streaming"""
         with self.frame_lock:
@@ -109,6 +174,8 @@ class FaceMotionDetector:
 
 # Initialize detector
 detector = FaceMotionDetector()
+# Set initial sensitivity to high for maximum motion detection
+detector.adjust_sensitivity('high')
 
 # Flask app
 app = Flask(__name__)
@@ -132,16 +199,34 @@ def status():
     """API endpoint to get detection status"""
     return {
         'motion_detected': detector.motion_detected,
+        'motion_sensitivity': detector.motion_sensitivity,
+        'min_motion_area': detector.min_motion_area,
         'timestamp': time.time()
+    }
+
+@app.route('/sensitivity/<level>')
+def set_sensitivity(level):
+    """API endpoint to adjust motion detection sensitivity"""
+    detector.adjust_sensitivity(level)
+    return {
+        'status': 'success',
+        'sensitivity_level': level,
+        'motion_sensitivity': detector.motion_sensitivity,
+        'min_motion_area': detector.min_motion_area
     }
 
 if __name__ == '__main__':
     print("Starting Face Detection & Motion Sensor Application...")
     print("Features:")
     print("- Face detection with green bounding boxes")
-    print("- Motion detection with red 'Motion' text in upper right")
+    print("- High-sensitivity motion detection with red 'Motion' text in upper right")
     print("- Flask web server for camera streaming")
-    print("Or use your Raspberry Pi's IP address: http://[PI_IP]:5000/video_feed")
+    print("- Adjustable motion sensitivity levels")
+    print("\nAccess URLs:")
+    print("- Video stream: http://[PI_IP]:5000/video_feed")
+    print("- Status API: http://[PI_IP]:5000/status")
+    print("- Adjust sensitivity: http://[PI_IP]:5000/sensitivity/[low|medium|high|ultra]")
+    print("\nCurrent sensitivity: HIGH (most sensitive)")
     
     try:
         app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
