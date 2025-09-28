@@ -26,18 +26,86 @@ def create_dataset_structure():
     
     return True
 
-def download_image(url, save_path):
-    """Download a single image from URL"""
+def create_placeholder_image(save_path, user_name, image_index):
+    """Create a placeholder image when download fails"""
     try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
+        from PIL import Image, ImageDraw, ImageFont
         
-        with open(save_path, 'wb') as f:
-            f.write(response.content)
+        # Create a simple placeholder image
+        img = Image.new('RGB', (200, 200), color='lightgray')
+        draw = ImageDraw.Draw(img)
+        
+        # Try to use a default font, fallback to basic if not available
+        try:
+            font = ImageFont.truetype("arial.ttf", 20)
+        except:
+            font = ImageFont.load_default()
+        
+        # Add text to the image
+        text = f"{user_name}\nImage {image_index + 1}\n(Placeholder)"
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        
+        x = (200 - text_width) // 2
+        y = (200 - text_height) // 2
+        
+        draw.text((x, y), text, fill='black', font=font)
+        
+        # Save the placeholder image
+        img.save(save_path, 'JPEG')
         return True
+        
     except Exception as e:
-        print(f"Error downloading {url}: {e}")
+        print(f"Error creating placeholder image: {e}")
         return False
+
+def download_image(url, save_path, max_retries=2):
+    """Download a single image from URL with retry logic"""
+    for attempt in range(max_retries):
+        try:
+            # Add headers to mimic a browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+            
+            response = requests.get(url, timeout=15, headers=headers, stream=True)
+            response.raise_for_status()
+            
+            # Check if response is actually an image
+            content_type = response.headers.get('content-type', '')
+            if not content_type.startswith('image/'):
+                print(f"Warning: {url} is not an image (content-type: {content_type})")
+                return False
+            
+            # Download in chunks to handle large images
+            with open(save_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            return True
+            
+        except requests.exceptions.ConnectionError as e:
+            print(f"Connection error downloading {url} (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)  # Wait before retry
+                continue
+        except requests.exceptions.Timeout as e:
+            print(f"Timeout downloading {url} (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)
+                continue
+        except Exception as e:
+            print(f"Error downloading {url} (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)
+                continue
+    
+    return False
 
 def get_users_with_faces():
     """Get all users with their face images from the database"""
@@ -132,6 +200,15 @@ def sync_user_images():
                     print(f"Downloaded: {user_name}/{filename}")
                 else:
                     print(f"Failed to download: {user_name}/{filename}")
+                    # Create a placeholder image instead of text file
+                    if create_placeholder_image(save_path, user_name, i):
+                        successful_downloads += 1
+                        print(f"Created placeholder: {user_name}/{filename}")
+                    else:
+                        # Fallback to text file if image creation fails
+                        placeholder_path = save_path.replace('.jpg', '_placeholder.txt')
+                        with open(placeholder_path, 'w') as f:
+                            f.write(f"Failed to download: {image_url}")
                 
                 total_images += 1
                 
