@@ -51,7 +51,7 @@ class FaceMotionDetector:
         
         # Motion detection storage
         self.last_motion_time = 0
-        self.motion_cooldown = 10  # seconds between motion detections
+        self.motion_cooldown = 30  # seconds between motion detections
         self.captures_dir = "captures"
         if not os.path.exists(self.captures_dir):
             os.makedirs(self.captures_dir)
@@ -61,7 +61,7 @@ class FaceMotionDetector:
         self.known_names = []
         self.face_recognition_enabled = False
         self.last_face_detection_time = 0
-        self.face_detection_cooldown = 10  # seconds between face detections
+        self.face_detection_cooldown = 30  # seconds between face detections
         self.load_face_encodings()
         
         # Start processing thread
