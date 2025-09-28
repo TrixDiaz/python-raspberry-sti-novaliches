@@ -95,7 +95,7 @@ class FaceMotionDetector:
     
     def detect_faces_and_motion(self, frame):
         """Detect faces and motion in the frame"""
-        # Face detection
+        # Face detection (no drawing - handled by face recognition)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(
             gray, 
@@ -104,10 +104,7 @@ class FaceMotionDetector:
             minSize=(30, 30)
         )
         
-        # Draw bounding boxes around detected faces
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(frame, 'Face', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        # No face drawing here - face recognition will handle the drawing
         
         # Motion detection with high sensitivity
         motion_mask = self.background_subtractor.apply(frame)
