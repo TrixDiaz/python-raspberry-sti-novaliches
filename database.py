@@ -29,6 +29,18 @@ class MotionDetection(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+class FaceDetection(Base):
+    __tablename__ = "face_detection"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    face_data = Column(Text, nullable=False)
+    confidence = Column(Text, nullable=False)
+    captured_photo = Column(Text, nullable=False)
+    device_serial_number = Column(String, nullable=False)
+    device_model = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
 def get_db():
     """Get database session"""
     db = SessionLocal()
@@ -55,6 +67,28 @@ def save_motion_detection(motion_data, confidence, captured_photo_path, device_s
     except Exception as e:
         db.rollback()
         print(f"Error saving motion detection: {e}")
+        return None
+    finally:
+        db.close()
+
+def save_face_detection(face_data, confidence, captured_photo_path, device_serial="SNABC123", device_model="RPI3"):
+    """Save face detection data to database"""
+    db = SessionLocal()
+    try:
+        face_record = FaceDetection(
+            face_data=face_data,
+            confidence=confidence,
+            captured_photo=captured_photo_path,
+            device_serial_number=device_serial,
+            device_model=device_model
+        )
+        db.add(face_record)
+        db.commit()
+        db.refresh(face_record)
+        return face_record
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving face detection: {e}")
         return None
     finally:
         db.close()

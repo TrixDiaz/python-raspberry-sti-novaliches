@@ -4,10 +4,16 @@ import threading
 import time
 import base64
 import os
+import pickle
 from datetime import datetime
 from flask import Flask, Response, render_template_string, jsonify, request
 from picamera2 import Picamera2
-from database import save_motion_detection
+from database import save_motion_detection, save_face_detection
+import face_recognition
+
+# Global device configuration
+DEVICE_SERIAL_NUMBER = "SNABC123"
+DEVICE_MODEL = "RPI3"
 
 class FaceMotionDetector:
     def __init__(self):
@@ -50,6 +56,14 @@ class FaceMotionDetector:
         if not os.path.exists(self.captures_dir):
             os.makedirs(self.captures_dir)
         
+        # Face recognition variables
+        self.known_encodings = []
+        self.known_names = []
+        self.face_recognition_enabled = False
+        self.last_face_detection_time = 0
+        self.face_detection_cooldown = 10  # seconds between face detections
+        self.load_face_encodings()
+        
         # Start processing thread
         self.processing_thread = threading.Thread(target=self.process_frames)
         self.processing_thread.daemon = True
@@ -67,6 +81,9 @@ class FaceMotionDetector:
                 
                 # Process frame for face detection and motion detection
                 processed_frame = self.detect_faces_and_motion(frame_bgr)
+                
+                # Apply face recognition
+                processed_frame = self.recognize_faces(processed_frame)
                 
                 # Update current frame for streaming
                 with self.frame_lock:
@@ -205,8 +222,8 @@ class FaceMotionDetector:
                 motion_data=str(motion_data),
                 confidence=str(confidence),
                 captured_photo_path=filepath,
-                device_serial="SNABC123",
-                device_model="RPI3"
+                device_serial=DEVICE_SERIAL_NUMBER,
+                device_model=DEVICE_MODEL
             )
             
             if result:
@@ -216,6 +233,113 @@ class FaceMotionDetector:
                 
         except Exception as e:
             print(f"Error capturing motion photo: {e}")
+    
+    def load_face_encodings(self):
+        """Load face encodings from pickle file"""
+        try:
+            if os.path.exists("encodings.pickle"):
+                with open("encodings.pickle", "rb") as f:
+                    data = pickle.load(f)
+                    self.known_encodings = data.get('encodings', [])
+                    self.known_names = data.get('names', [])
+                    self.face_recognition_enabled = len(self.known_encodings) > 0
+                    print(f"Loaded {len(self.known_encodings)} face encodings for {len(set(self.known_names))} users")
+                return True
+            else:
+                print("No encodings.pickle file found. Face recognition disabled.")
+                return False
+        except Exception as e:
+            print(f"Error loading face encodings: {e}")
+            return False
+    
+    def recognize_faces(self, frame):
+        """Recognize faces in the frame"""
+        if not self.face_recognition_enabled:
+            return frame
+        
+        try:
+            # Convert BGR to RGB for face_recognition
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Find face locations and encodings
+            face_locations = face_recognition.face_locations(rgb_frame)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+            
+            for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+                # Compare with known faces
+                matches = face_recognition.compare_faces(self.known_encodings, face_encoding)
+                name = "Unknown"
+                confidence = 0.0
+                
+                if True in matches:
+                    # Find the best match
+                    face_distances = face_recognition.face_distance(self.known_encodings, face_encoding)
+                    best_match_index = np.argmin(face_distances)
+                    
+                    if matches[best_match_index]:
+                        name = self.known_names[best_match_index]
+                        confidence = (1 - face_distances[best_match_index]) * 100
+                
+                # Draw rectangle and label
+                color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+                cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
+                
+                # Draw label background
+                cv2.rectangle(frame, (left, bottom - 35), (right, bottom), color, cv2.FILLED)
+                
+                # Draw label text
+                label = f"{name} ({confidence:.1f}%)" if name != "Unknown" else "Unknown"
+                cv2.putText(frame, label, (left + 6, bottom - 6), 
+                           cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1)
+                
+                # Save face detection to database (with cooldown)
+                current_time = time.time()
+                if current_time - self.last_face_detection_time > self.face_detection_cooldown:
+                    self.save_face_detection(frame, name, confidence, (left, top, right, bottom))
+                    self.last_face_detection_time = current_time
+            
+            return frame
+            
+        except Exception as e:
+            print(f"Error in face recognition: {e}")
+            return frame
+    
+    def save_face_detection(self, frame, name, confidence, face_location):
+        """Save face detection to database"""
+        try:
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"face_{name}_{timestamp}.jpg"
+            filepath = os.path.join(self.captures_dir, filename)
+            
+            # Save the frame as image
+            cv2.imwrite(filepath, frame)
+            
+            # Prepare face data
+            face_data = {
+                "name": name,
+                "confidence": confidence,
+                "timestamp": timestamp,
+                "face_location": face_location,
+                "recognition_type": "known" if name != "Unknown" else "unknown"
+            }
+            
+            # Save to database
+            result = save_face_detection(
+                face_data=str(face_data),
+                confidence=str(confidence),
+                captured_photo_path=filepath,
+                device_serial=DEVICE_SERIAL_NUMBER,
+                device_model=DEVICE_MODEL
+            )
+            
+            if result:
+                print(f"Face detected and saved: {name} (Confidence: {confidence:.1f}%)")
+            else:
+                print(f"Failed to save face detection to database: {name}")
+                
+        except Exception as e:
+            print(f"Error saving face detection: {e}")
     
     def get_frame(self):
         """Get current frame for streaming"""
@@ -286,8 +410,8 @@ def motion_detection_endpoint():
             motion_data=str(motion_data),
             confidence=str(confidence),
             captured_photo_path=filepath,
-            device_serial="SNABC123",
-            device_model="RPI3"
+            device_serial=DEVICE_SERIAL_NUMBER,
+            device_model=DEVICE_MODEL
         )
         
         if result:
@@ -318,19 +442,98 @@ def motion_status():
     })
 
 
+@app.route('/dataset/sync', methods=['POST'])
+def sync_dataset():
+    """Trigger dataset sync from backend"""
+    try:
+        import subprocess
+        result = subprocess.run(['python', 'sync_dataset.py'], 
+                              capture_output=True, text=True, timeout=300)
+        
+        if result.returncode == 0:
+            # Reload face encodings after sync
+            detector.load_face_encodings()
+            return jsonify({
+                "success": True,
+                "message": "Dataset sync completed successfully",
+                "output": result.stdout
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Dataset sync failed",
+                "error": result.stderr
+            }), 500
+            
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Dataset sync timed out"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error during dataset sync: {str(e)}"
+        }), 500
+
+
+@app.route('/face_recognition/status')
+def face_recognition_status():
+    """Get face recognition status"""
+    return jsonify({
+        "enabled": detector.face_recognition_enabled,
+        "known_encodings_count": len(detector.known_encodings),
+        "known_users_count": len(set(detector.known_names)),
+        "encodings_file_exists": os.path.exists("encodings.pickle"),
+        "face_detection_cooldown": detector.face_detection_cooldown,
+        "last_face_detection_time": detector.last_face_detection_time
+    })
+
+
+@app.route('/face_recognition/reload', methods=['POST'])
+def reload_face_encodings():
+    """Reload face encodings from pickle file"""
+    try:
+        success = detector.load_face_encodings()
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Face encodings reloaded successfully",
+                "encodings_count": len(detector.known_encodings),
+                "users_count": len(set(detector.known_names))
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Failed to reload face encodings"
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error reloading face encodings: {str(e)}"
+        }), 500
+
+
 if __name__ == '__main__':
     print("Starting Face Detection & Motion Sensor Application...")
     print("Features:")
     print("- Face detection with green bounding boxes")
+    print("- Face recognition with known/unknown user identification")
     print("- High-sensitivity motion detection with red 'Motion' text in upper right")
     print("- Automatic photo capture and database storage on motion detection")
+    print("- Automatic face recognition and database storage")
     print("- Flask web server for camera streaming")
     print("- Adjustable motion sensitivity levels")
+    print("- Dataset sync and face encoding management")
     print("\nAccess URLs:")
     print("- Video stream: http://[PI_IP]:5000/video_feed")
     print("- Motion detection endpoint: POST http://[PI_IP]:5000/motion_detection")
     print("- Motion status: GET http://[PI_IP]:5000/motion_status")
-    print("- Device Serial: SNABC123, Model: RPI3")
+    print("- Dataset sync: POST http://[PI_IP]:5000/dataset/sync")
+    print("- Face recognition status: GET http://[PI_IP]:5000/face_recognition/status")
+    print("- Reload face encodings: POST http://[PI_IP]:5000/face_recognition/reload")
+    print(f"- Device Serial: {DEVICE_SERIAL_NUMBER}, Model: {DEVICE_MODEL}")
+    print("\nTo sync user dataset, run: python sync_dataset.py")
     
     try:
         app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
