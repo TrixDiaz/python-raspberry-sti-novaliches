@@ -4,15 +4,16 @@ Dataset Sync Script
 Downloads all user images from the backend API and organizes them in dataset folders
 """
 
-import requests
 import os
 import json
+import requests
 from urllib.parse import urlparse
 import time
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-# Backend API configuration
-BACKEND_BASE_URL = "http://localhost:3000"  # Update this to your backend URL
-API_ENDPOINT = f"{BACKEND_BASE_URL}/api/faces/dataset-sync"  # Public dataset sync endpoint
+# Database configuration - Direct connection to Neon
+DATABASE_URL = "postgresql://neondb_owner:npg_VgHuhCp2Jx6P@ep-wispy-firefly-adswi51k-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 # Dataset configuration
 DATASET_DIR = "dataset"
@@ -38,6 +39,40 @@ def download_image(url, save_path):
         print(f"Error downloading {url}: {e}")
         return False
 
+def get_users_with_faces():
+    """Get all users with their face images from the database"""
+    try:
+        # Connect to database
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Query to get users and their face images
+        query = """
+        SELECT 
+            u.id as user_id,
+            u.name,
+            u.email,
+            f.images,
+            f.total_images
+        FROM users u
+        JOIN faces f ON u.id = f.user_id
+        WHERE f.images IS NOT NULL 
+        AND f.images != '[]'
+        AND f.images != 'null'
+        """
+        
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return results
+        
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        return []
+
 def sync_user_images():
     """Download all user images and organize them in dataset folders"""
     print("Starting dataset sync...")
@@ -46,31 +81,30 @@ def sync_user_images():
     create_dataset_structure()
     
     try:
-        # Get all users' face data from backend (public endpoint)
-        print(f"Fetching user data from: {API_ENDPOINT}")
-        response = requests.get(API_ENDPOINT, timeout=30)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if not data.get('success'):
-            print(f"API Error: {data.get('message', 'Unknown error')}")
-            return False
-        
-        users_data = data.get('data', {}).get('faces', [])
-        print(f"Found {len(users_data)} users with face data")
+        # Get users with face data from database
+        print("Connecting to Neon database...")
+        users_data = get_users_with_faces()
         
         if len(users_data) == 0:
             print("No users with face data found in database.")
             return False
         
+        print(f"Found {len(users_data)} users with face data")
+        
         total_images = 0
         successful_downloads = 0
         
         for user_data in users_data:
-            user_id = user_data.get('userId')
-            user_name = user_data.get('name', f'user_{user_id}')
-            images = user_data.get('images', [])
+            user_id = user_data['user_id']
+            user_name = user_data['name']
+            images_json = user_data['images']
+            
+            # Parse images JSON
+            try:
+                images = json.loads(images_json) if isinstance(images_json, str) else images_json
+            except:
+                print(f"Error parsing images for user: {user_name}")
+                continue
             
             if len(images) == 0:
                 print(f"No images for user: {user_name}")
@@ -124,16 +158,6 @@ def main():
     print("and organize them in dataset folders for face recognition")
     print()
     
-    # Check if backend is accessible
-    try:
-        response = requests.get(f"{BACKEND_BASE_URL}/health", timeout=5)
-        print("✓ Backend server is accessible")
-    except:
-        print("⚠ Warning: Cannot reach backend server")
-        print(f"Make sure your backend is running at: {BACKEND_BASE_URL}")
-        print("Backend should be running on the port shown in your backend console")
-        print()
-    
     # Sync dataset
     if sync_user_images():
         print("\n✓ Dataset sync completed successfully")
@@ -142,9 +166,9 @@ def main():
     else:
         print("\n✗ Dataset sync failed")
         print("Make sure:")
-        print("1. Your backend server is running")
-        print("2. You have users with face images in your database")
-        print("3. The backend can connect to your Neon database")
+        print("1. You have users with face images in your Neon database")
+        print("2. The database connection is working")
+        print("3. You have internet connection to download images")
         return False
     
     print("\n=== Sync Complete ===")
