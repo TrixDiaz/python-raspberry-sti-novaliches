@@ -113,91 +113,6 @@ detector = FaceMotionDetector()
 # Flask app
 app = Flask(__name__)
 
-@app.route('/')
-def index():
-    """Main page with video stream"""
-    return render_template_string('''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Face Detection & Motion Sensor</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 20px;
-                background-color: #f0f0f0;
-            }
-            .container {
-                max-width: 1200px;
-                margin: 0 auto;
-                background-color: white;
-                padding: 20px;
-                border-radius: 10px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }
-            h1 {
-                text-align: center;
-                color: #333;
-                margin-bottom: 30px;
-            }
-            .video-container {
-                text-align: center;
-                margin-bottom: 20px;
-            }
-            img {
-                max-width: 100%;
-                height: auto;
-                border: 2px solid #ddd;
-                border-radius: 8px;
-            }
-            .info {
-                background-color: #e8f4fd;
-                padding: 15px;
-                border-radius: 5px;
-                margin-top: 20px;
-            }
-            .status {
-                display: flex;
-                justify-content: space-around;
-                margin-top: 20px;
-            }
-            .status-item {
-                text-align: center;
-                padding: 10px;
-                border-radius: 5px;
-                background-color: #f8f9fa;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Face Detection & Motion Sensor</h1>
-            <div class="video-container">
-                <img src="{{ url_for('video_feed') }}" alt="Video Stream">
-            </div>
-            <div class="info">
-                <h3>Features:</h3>
-                <ul>
-                    <li><strong>Face Detection:</strong> Green rectangles around detected faces</li>
-                    <li><strong>Motion Detection:</strong> "Motion" text appears in upper right corner when motion is detected</li>
-                    <li><strong>Real-time Streaming:</strong> Live camera feed via Flask web server</li>
-                </ul>
-            </div>
-            <div class="status">
-                <div class="status-item">
-                    <h4>Face Detection</h4>
-                    <p>Active - Green boxes show detected faces</p>
-                </div>
-                <div class="status-item">
-                    <h4>Motion Detection</h4>
-                    <p>Active - Red "Motion" text when movement detected</p>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    ''')
 
 @app.route('/video_feed')
 def video_feed():
@@ -226,8 +141,7 @@ if __name__ == '__main__':
     print("- Face detection with green bounding boxes")
     print("- Motion detection with red 'Motion' text in upper right")
     print("- Flask web server for camera streaming")
-    print("\nAccess the application at: http://localhost:5000")
-    print("Or use your Raspberry Pi's IP address: http://[PI_IP]:5000")
+    print("Or use your Raspberry Pi's IP address: http://[PI_IP]:5000/video_feed")
     
     try:
         app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
