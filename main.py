@@ -25,8 +25,7 @@ class FaceMotionDetector:
         self.background_subtractor = cv2.createBackgroundSubtractorMOG2(
             detectShadows=True,
             varThreshold=16,  # Lower threshold for more sensitivity
-            history=500,      # Longer history for better background learning
-            nmixtures=5       # More mixture components for better detection
+            history=500       # Longer history for better background learning
         )
         self.motion_detected = False
         self.motion_timer = 0
@@ -194,26 +193,6 @@ def video_feed():
     
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/status')
-def status():
-    """API endpoint to get detection status"""
-    return {
-        'motion_detected': detector.motion_detected,
-        'motion_sensitivity': detector.motion_sensitivity,
-        'min_motion_area': detector.min_motion_area,
-        'timestamp': time.time()
-    }
-
-@app.route('/sensitivity/<level>')
-def set_sensitivity(level):
-    """API endpoint to adjust motion detection sensitivity"""
-    detector.adjust_sensitivity(level)
-    return {
-        'status': 'success',
-        'sensitivity_level': level,
-        'motion_sensitivity': detector.motion_sensitivity,
-        'min_motion_area': detector.min_motion_area
-    }
 
 if __name__ == '__main__':
     print("Starting Face Detection & Motion Sensor Application...")
@@ -224,8 +203,6 @@ if __name__ == '__main__':
     print("- Adjustable motion sensitivity levels")
     print("\nAccess URLs:")
     print("- Video stream: http://[PI_IP]:5000/video_feed")
-    print("- Status API: http://[PI_IP]:5000/status")
-    print("- Adjust sensitivity: http://[PI_IP]:5000/sensitivity/[low|medium|high|ultra]")
     print("\nCurrent sensitivity: HIGH (most sensitive)")
     
     try:
