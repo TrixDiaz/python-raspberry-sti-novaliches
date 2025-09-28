@@ -81,6 +81,31 @@ The application can be customized by modifying the following parameters in `main
 3. **Performance issues**: Reduce camera resolution or frame rate
 4. **Network access**: Ensure firewall allows port 5000
 
+### Installing dlib on Raspberry Pi (optional)
+
+If `pip install -r requirements.txt` fails trying to build `dlib` from source, you can either rely on a prebuilt wheel (piwheels) or install the system build-dependencies and build from source:
+
+- Prefer piwheels (default on Raspberry Pi OS) — pip will usually fetch a prebuilt aarch64 wheel:
+
+  ```bash
+  pip install dlib
+  ```
+
+- If a wheel is not available and pip tries to build from source, install these packages first:
+
+  ```bash
+  sudo apt update
+  sudo apt install -y build-essential cmake libopenblas-dev liblapack-dev libjpeg-dev libpng-dev python3-dev
+  ```
+
+- Then retry:
+
+  ```bash
+  pip install dlib
+  ```
+
+If building still fails, capture the pip error log and open an issue with the error output.
+
 ## Technical Details
 
 - **Face Detection**: Uses OpenCV's Haar cascade classifier
