@@ -56,6 +56,11 @@ class FaceMotionDetector:
         if not os.path.exists(self.captures_dir):
             os.makedirs(self.captures_dir)
         
+        # Also create uploads/captures directory for backend compatibility
+        self.backend_captures_dir = "uploads/captures"
+        if not os.path.exists(self.backend_captures_dir):
+            os.makedirs(self.backend_captures_dir, exist_ok=True)
+        
         # Face recognition variables
         self.known_encodings = []
         self.known_names = []
@@ -198,10 +203,14 @@ class FaceMotionDetector:
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"motion_{timestamp}.jpg"
-            filepath = os.path.join(self.captures_dir, filename)
             
-            # Save the frame as image
-            cv2.imwrite(filepath, frame)
+            # Save to both local and backend directories
+            local_filepath = os.path.join(self.captures_dir, filename)
+            backend_filepath = os.path.join(self.backend_captures_dir, filename)
+            
+            # Save the frame as image to both locations
+            cv2.imwrite(local_filepath, frame)
+            cv2.imwrite(backend_filepath, frame)
             
             # Calculate confidence based on motion area
             confidence = min(100, max(0, (motion_area / 1000) * 100))
@@ -214,11 +223,11 @@ class FaceMotionDetector:
                 "min_area": self.min_motion_area
             }
             
-            # Save to database
+            # Save to database with backend-compatible path
             result = save_motion_detection(
                 motion_data=str(motion_data),
                 confidence=str(confidence),
-                captured_photo_path=filepath,
+                captured_photo_path=f"captures/{filename}",  # Backend-compatible path
                 device_serial=DEVICE_SERIAL_NUMBER,
                 device_model=DEVICE_MODEL
             )
@@ -307,10 +316,14 @@ class FaceMotionDetector:
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"face_{name}_{timestamp}.jpg"
-            filepath = os.path.join(self.captures_dir, filename)
             
-            # Save the frame as image
-            cv2.imwrite(filepath, frame)
+            # Save to both local and backend directories
+            local_filepath = os.path.join(self.captures_dir, filename)
+            backend_filepath = os.path.join(self.backend_captures_dir, filename)
+            
+            # Save the frame as image to both locations
+            cv2.imwrite(local_filepath, frame)
+            cv2.imwrite(backend_filepath, frame)
             
             # Prepare face data
             face_data = {
@@ -321,11 +334,11 @@ class FaceMotionDetector:
                 "recognition_type": "known" if name != "Unknown" else "unknown"
             }
             
-            # Save to database
+            # Save to database with backend-compatible path
             result = save_face_detection(
                 face_data=str(face_data),
                 confidence=str(confidence),
-                captured_photo_path=filepath,
+                captured_photo_path=f"captures/{filename}",  # Backend-compatible path
                 device_serial=DEVICE_SERIAL_NUMBER,
                 device_model=DEVICE_MODEL
             )
@@ -390,8 +403,12 @@ def motion_detection_endpoint():
         # Capture photo
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"manual_motion_{timestamp}.jpg"
-        filepath = os.path.join(detector.captures_dir, filename)
-        cv2.imwrite(filepath, frame_cv)
+        
+        # Save to both local and backend directories
+        local_filepath = os.path.join(detector.captures_dir, filename)
+        backend_filepath = os.path.join(detector.backend_captures_dir, filename)
+        cv2.imwrite(local_filepath, frame_cv)
+        cv2.imwrite(backend_filepath, frame_cv)
         
         # Prepare motion data
         motion_data = {
@@ -402,11 +419,11 @@ def motion_detection_endpoint():
             "manual_trigger": True
         }
         
-        # Save to database
+        # Save to database with backend-compatible path
         result = save_motion_detection(
             motion_data=str(motion_data),
             confidence=str(confidence),
-            captured_photo_path=filepath,
+            captured_photo_path=f"captures/{filename}",  # Backend-compatible path
             device_serial=DEVICE_SERIAL_NUMBER,
             device_model=DEVICE_MODEL
         )
