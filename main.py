@@ -56,10 +56,14 @@ class FaceMotionDetector:
         if not os.path.exists(self.captures_dir):
             os.makedirs(self.captures_dir)
         
-        # Also create uploads/captures directory for backend compatibility
+        # Note: Backend uploads directory is on the server, not local
+        # We'll save locally and the backend will handle serving
         self.backend_captures_dir = "uploads/captures"
         if not os.path.exists(self.backend_captures_dir):
             os.makedirs(self.backend_captures_dir, exist_ok=True)
+            print(f"Created local backend directory: {self.backend_captures_dir}")
+        else:
+            print(f"Backend directory already exists: {self.backend_captures_dir}")
         
         # Face recognition variables
         self.known_encodings = []
@@ -204,13 +208,13 @@ class FaceMotionDetector:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"motion_{timestamp}.jpg"
             
-            # Save to both local and backend directories
+            # Save locally first
             local_filepath = os.path.join(self.captures_dir, filename)
-            backend_filepath = os.path.join(self.backend_captures_dir, filename)
-            
-            # Save the frame as image to both locations
             cv2.imwrite(local_filepath, frame)
-            cv2.imwrite(backend_filepath, frame)
+            
+            # Encode image as base64 for database storage
+            _, buffer = cv2.imencode('.jpg', frame)
+            image_base64 = base64.b64encode(buffer).decode('utf-8')
             
             # Calculate confidence based on motion area
             confidence = min(100, max(0, (motion_area / 1000) * 100))
@@ -223,11 +227,11 @@ class FaceMotionDetector:
                 "min_area": self.min_motion_area
             }
             
-            # Save to database with backend-compatible path
+            # Save to database with base64 image data
             result = save_motion_detection(
                 motion_data=str(motion_data),
                 confidence=str(confidence),
-                captured_photo_path=f"captures/{filename}",  # Backend-compatible path
+                captured_photo_path=image_base64,  # Store base64 image data
                 device_serial=DEVICE_SERIAL_NUMBER,
                 device_model=DEVICE_MODEL
             )
@@ -317,13 +321,13 @@ class FaceMotionDetector:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"face_{name}_{timestamp}.jpg"
             
-            # Save to both local and backend directories
+            # Save locally first
             local_filepath = os.path.join(self.captures_dir, filename)
-            backend_filepath = os.path.join(self.backend_captures_dir, filename)
-            
-            # Save the frame as image to both locations
             cv2.imwrite(local_filepath, frame)
-            cv2.imwrite(backend_filepath, frame)
+            
+            # Encode image as base64 for database storage
+            _, buffer = cv2.imencode('.jpg', frame)
+            image_base64 = base64.b64encode(buffer).decode('utf-8')
             
             # Prepare face data
             face_data = {
@@ -334,11 +338,11 @@ class FaceMotionDetector:
                 "recognition_type": "known" if name != "Unknown" else "unknown"
             }
             
-            # Save to database with backend-compatible path
+            # Save to database with base64 image data
             result = save_face_detection(
                 face_data=str(face_data),
                 confidence=str(confidence),
-                captured_photo_path=f"captures/{filename}",  # Backend-compatible path
+                captured_photo_path=image_base64,  # Store base64 image data
                 device_serial=DEVICE_SERIAL_NUMBER,
                 device_model=DEVICE_MODEL
             )
