@@ -277,7 +277,8 @@ class FaceMotionDetector:
             
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
                 # Compare with known faces
-                matches = face_recognition.compare_faces(self.known_encodings, face_encoding, tolerance=4)
+                # Lower tolerance = stricter matching (default is 0.6, using 0.5 for better accuracy)
+                matches = face_recognition.compare_faces(self.known_encodings, face_encoding, tolerance=0.5)
                 name = "Unknown"
                 confidence = 0.0
                 
@@ -286,9 +287,13 @@ class FaceMotionDetector:
                     face_distances = face_recognition.face_distance(self.known_encodings, face_encoding)
                     best_match_index = np.argmin(face_distances)
                     
+                    # Only accept match if confidence is above 60%
                     if matches[best_match_index]:
-                        name = self.known_names[best_match_index]
                         confidence = (1 - face_distances[best_match_index]) * 100
+                        if confidence >= 60.0:
+                            name = self.known_names[best_match_index]
+                        else:
+                            name = "Unknown"
                 
                 # Draw rectangle and label
                 color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
